@@ -9,7 +9,7 @@ import random
 import copy
 import matplotlib.pyplot as plt
 from model import Net
-from main import test_loader, device
+
 
 class CIFAR10Dataset(torch.utils.data.Dataset):
     def __init__(self, image_paths, transform=None):
@@ -189,4 +189,4 @@ def visualize_misclassified_gradcam(model, test_loader, device, class_labels, ma
         plt.show()
 
 # Usage example:
-visualize_misclassified_gradcam(Net, test_loader, device, y_test)
+#visualize_misclassified_gradcam(Net, test_loader, device, y_test)
