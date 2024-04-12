@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
-!pip install torch-lr-finder
+
 
 
 from albumentations.pytorch import ToTensorV2
