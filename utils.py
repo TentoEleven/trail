@@ -206,7 +206,7 @@ scheduler = OneCycleLR(optimizer, max_lr=LR_MAX, steps_per_epoch=len(train_loade
 max_lr = 0.1
 min_lr = 0.001
 
-EPOCHS = 20
+EPOCHS = 2
 # Initialize the OneCycleLR scheduler
 optimizer = optim.Adam(model.parameters(), lr=0.02)
 scheduler = OneCycleLR(optimizer, max_lr=max_lr, total_steps=len(train_loader) * EPOCHS,
