@@ -1,22 +1,15 @@
 from __future__ import print_function
 import torch
 import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torchvision import datasets, transforms
-#!pip install torch-lr-finder
-from model import Net
-
 from albumentations.pytorch import ToTensorV2
-
-
-
-# Data Transformer
-
-# Train Phase transformations
 import albumentations as A
 import numpy as np
+import random
+import copy
+import matplotlib.pyplot as plt
+from model import Net
+from main import test_loader, device
 
 class CIFAR10Dataset(torch.utils.data.Dataset):
     def __init__(self, image_paths, transform=None):
@@ -32,31 +25,21 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
             image = self.transform(image=np.array(image))["image"]
         return image, label
 
+def get_transforms():
+    train_transforms = A.Compose([
+        A.HorizontalFlip(p=0.2),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=5, p=0.5),
+        A.CoarseDropout(max_holes=1, max_height=16, max_width=16, min_holes=1, min_height=16, min_width=16, fill_value=[0.5, 0.5, 0.5], mask_fill_value=None, p=0.5),
+        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ToTensorV2(),
+    ])
 
+    test_transforms = A.Compose([
+        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ToTensorV2(),
+    ])
 
-train_transforms = A.Compose([
-    A.HorizontalFlip(p=0.2),
-    A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=5, p=0.5),
-    A.CoarseDropout(max_holes=1, max_height=16, max_width=16, min_holes=1, min_height=16, min_width=16, fill_value=[0.5, 0.5, 0.5], mask_fill_value=None, p=0.5),
-    A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ToTensorV2(),
-])
-
-
-
-test_transforms = A.Compose([
-    A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ToTensorV2(),
-])
-
-
-# Dataset
-train = CIFAR10Dataset('./data', transform=train_transforms)
-test = CIFAR10Dataset('./data', transform=test_transforms)
-
-# Data Augmentations
-import copy
-import matplotlib.pyplot as plt
+    return train_transforms, test_transforms
 
 def visualize_augmentations(dataset, idx=0, samples=10, cols=5):
     dataset = copy.deepcopy(dataset)
@@ -69,158 +52,7 @@ def visualize_augmentations(dataset, idx=0, samples=10, cols=5):
         ax.ravel()[i].set_axis_off()
     plt.tight_layout()
     plt.show()
-    
-    
 
-# Dataloader Arguments & Test/Train Dataloaders
-SEED = 1
-
-# CUDA?
-cuda = torch.cuda.is_available()
-print("CUDA Available?", cuda)
-
-# For reproducibility
-torch.manual_seed(SEED)
-
-if cuda:
-    torch.cuda.manual_seed(SEED)
-
-# dataloader arguments - something you'll fetch these from cmdprmt
-dataloader_args = dict(shuffle=True, batch_size=512, num_workers=4, pin_memory=True) if cuda else dict(shuffle=True, batch_size=64)
-
-# train dataloader
-train_loader = torch.utils.data.DataLoader(train, **dataloader_args)
-
-# test dataloader
-test_loader = torch.utils.data.DataLoader(test, **dataloader_args)
-
-# Model SUmmary
-
-
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if use_cuda else "cpu")
-# print(device)
-# model = Net().to(device)
-# summary(model, input_size=(3, 32, 32))
-
-
-# Training and Testing
-from tqdm import tqdm
-
-train_losses = []
-test_losses = []
-train_acc = []
-test_acc = []
-
-def train(model, device, train_loader, optimizer, epoch):
-  model.train()
-  pbar = tqdm(train_loader)
-  correct = 0
-  processed = 0
-  for batch_idx, (data, target) in enumerate(pbar):
-    # get samples
-    data, target = data.to(device), target.to(device)
-
-    # Init
-    optimizer.zero_grad()
-    # In PyTorch, we need to set the gradients to zero before starting to do backpropragation because PyTorch accumulates the gradients on subsequent backward passes.
-    # Because of this, when you start your training loop, ideally you should zero out the gradients so that you do the parameter update correctly.
-
-    # Predict
-    y_pred = model(data)
-
-    # Calculate loss
-    loss = F.nll_loss(y_pred, target)
-    train_losses.append(loss)
-
-    # Backpropagation
-    loss.backward()
-    optimizer.step()
-
-    # Update pbar-tqdm
-
-    pred = y_pred.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-    correct += pred.eq(target.view_as(pred)).sum().item()
-    processed += len(data)
-
-    pbar.set_description(desc= f'Loss={loss.item()} Batch_id={batch_idx} Accuracy={100*correct/processed:0.2f}')
-    train_acc.append(100*correct/processed)
-
-def test(model, device, test_loader):
-    model.eval()
-    test_loss = 0
-    correct = 0
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    test_loss /= len(test_loader.dataset)
-    test_losses.append(test_loss)
-
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-
-    test_acc.append(100. * correct / len(test_loader.dataset))
-
-
-# Define OCLR Policy
-
-from torch.optim.lr_scheduler import OneCycleLR
-
-from torch_lr_finder import LRFinder
-
-# Initialize the network
-model = Net().to(device)
-
-
-
-# Define the loss function and optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters())
-
-# Find learning rate
-lr_finder = LRFinder(model, optimizer, criterion, device=device)
-#lr_finder.range_test(train, end_lr=100, num_iter=100)
-lr_finder.range_test(train_loader, end_lr=100, num_iter=100)
-lr_finder.plot() # to inspect the loss-learning rate graph
-lr_finder.reset() # to reset the model and optimizer to their initial state
-
-# Get the best loss and its corresponding learning rate
-best_loss = lr_finder.best_loss
-best_lr = lr_finder.history["lr"][lr_finder.history["loss"].index(best_loss)]
-print("Best Loss: %s\nBest Learning Rate: %s" % (best_loss, best_lr))
-
-# Assuming best_lr is the suitable learning rate, we can use it as LR_MAX
-LR_MAX = best_lr
-LR_MIN = LR_MAX / 10
-
-# Define the One Cycle Policy
-scheduler = OneCycleLR(optimizer, max_lr=LR_MAX, steps_per_epoch=len(train_loader), epochs=24, pct_start=5/24, anneal_strategy='linear', div_factor=LR_MAX/LR_MIN, final_div_factor=1.0)
-
-
-max_lr = 0.1
-min_lr = 0.001
-
-EPOCHS = 2
-# Initialize the OneCycleLR scheduler
-optimizer = optim.Adam(model.parameters(), lr=0.02)
-scheduler = OneCycleLR(optimizer, max_lr=max_lr, total_steps=len(train_loader) * EPOCHS,
-                       epochs=EPOCHS, steps_per_epoch=len(train_loader), pct_start=0.3)
-
-# Training loop
-for epoch in range(EPOCHS):
-    print("EPOCH:", epoch)
-    print("Learning Rate:", scheduler.get_lr()[0])
-
-    train(model, device, train_loader, optimizer, epoch)
-    test(model, device, test_loader)
-    scheduler.step()
-    
 
 # Plot Loss and Accuracy Graphs
 
@@ -357,6 +189,4 @@ def visualize_misclassified_gradcam(model, test_loader, device, class_labels, ma
         plt.show()
 
 # Usage example:
-visualize_misclassified_gradcam(model, test_loader, device, y_test)
-
-
+visualize_misclassified_gradcam(Net, test_loader, device, y_test)
